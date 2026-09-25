@@ -1,0 +1,41 @@
+﻿# ── macOS ──────────────────────────────────────────────────────────────────────
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.AppleDouble
+.LSOverride
+
+# ── Windows ────────────────────────────────────────────────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Editors / IDEs ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.orig
+
+# ── Environment secrets ────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+# Keep .env.example committed
+
+# ── Node / React app ───────────────────────────────────────────────────────────
+devonboard-app/node_modules/
+devonboard-app/dist/
+devonboard-app/.cache/
+node_modules/
+dist/
+
+# ── Planning / working files ───────────────────────────────────────────────────
+react-migration-plan.md
+agents-setup-plan.md
+
+# ── Bob runtime ────────────────────────────────────────────────────────────────
+.bob/tmp/

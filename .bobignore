@@ -1,0 +1,13 @@
+﻿# Boilerplate screenshot previews -- binary images, not indexable code
+boilerplates/**/*.png
+
+# React app build artifacts
+devonboard-app/dist/
+devonboard-app/node_modules/
+
+# Bob runtime dumps
+.bob/tmp/
+
+# Planning / scratch files (not useful as code context)
+react-migration-plan.md
+agents-setup-plan.md

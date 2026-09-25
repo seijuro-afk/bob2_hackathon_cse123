@@ -1,0 +1,105 @@
+import type { Config } from 'tailwindcss'
+
+const config: Config = {
+  darkMode: 'class',
+  content: ['./index.html', './src/**/*.{ts,tsx}'],
+  theme: {
+    extend: {
+      colors: {
+        // Canvas / background layers (darkest → lightest)
+        'canvas-dark':    '#0a0e14',
+        'canvas-subtle':  '#10141a',
+        'card-surface':   '#181c22',
+        'card-hover':     '#1e232b',
+        'card-border':    '#262c36',
+        'card-border-active': '#3a4352',
+
+        // Text
+        'text-primary':   '#f0f6fc',
+        'text-muted':     '#8b949e',
+
+        // Accents
+        'accent-green':       '#3fb950',
+        'accent-green-hover': '#2ea043',
+        'accent-green-dim':   'rgba(63, 185, 80, 0.15)',
+        'accent-blue':        '#58a6ff',
+        'accent-amber':       '#d29922',
+        'accent-red':         '#f85149',
+        'accent-purple':      '#bc8cff',
+
+        // Design.md surface tokens (used by boilerplate Tailwind configs)
+        surface:                    '#10141a',
+        'surface-dim':              '#10141a',
+        'surface-bright':           '#353940',
+        'surface-container-lowest': '#0a0e14',
+        'surface-container-low':    '#181c22',
+        'surface-container':        '#1c2026',
+        'surface-container-high':   '#262a31',
+        'surface-container-highest':'#31353c',
+        'on-surface':               '#dfe2eb',
+        'on-surface-variant':       '#bdcab8',
+        'inverse-surface':          '#dfe2eb',
+        'inverse-on-surface':       '#2d3137',
+        outline:                    '#879484',
+        'outline-variant':          '#3e4a3c',
+        primary:                    '#67df70',
+        'on-primary':               '#00390d',
+        'primary-container':        '#3fb950',
+        'on-primary-container':     '#004311',
+        'inverse-primary':          '#006e21',
+        secondary:                  '#a2c9ff',
+        'on-secondary':             '#00315c',
+        'secondary-container':      '#0071c7',
+        'on-secondary-container':   '#f0f4ff',
+        tertiary:                   '#d8baff',
+        'on-tertiary':              '#430882',
+        error:                      '#ffb4ab',
+        'on-error':                 '#690005',
+        'error-container':          '#93000a',
+        'on-error-container':       '#ffdad6',
+        background:                 '#10141a',
+        'on-background':            '#dfe2eb',
+        'surface-variant':          '#31353c',
+        'surface-tint':             '#67df70',
+      },
+      fontFamily: {
+        sans:  ['Geist', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        mono:  ['Geist Mono', 'ui-monospace', 'monospace'],
+      },
+      fontSize: {
+        'headline-xl':  ['36px', { lineHeight: '44px', letterSpacing: '-0.03em', fontWeight: '600' }],
+        'headline-xl-mobile': ['28px', { lineHeight: '36px', letterSpacing: '-0.02em', fontWeight: '600' }],
+        'headline-lg':  ['24px', { lineHeight: '32px', letterSpacing: '-0.02em', fontWeight: '600' }],
+        'headline-md':  ['18px', { lineHeight: '26px', letterSpacing: '-0.015em', fontWeight: '500' }],
+        'body-lg':      ['16px', { lineHeight: '24px', letterSpacing: '-0.01em' }],
+        'body-md':      ['14px', { lineHeight: '20px', letterSpacing: '-0.005em' }],
+        'body-sm':      ['12px', { lineHeight: '16px', letterSpacing: '0em' }],
+        'label-md':     ['13px', { lineHeight: '18px', letterSpacing: '0.01em', fontWeight: '500' }],
+        'label-sm':     ['11px', { lineHeight: '14px', letterSpacing: '0.02em', fontWeight: '500' }],
+        'code-inline':  ['12px', { lineHeight: '16px', letterSpacing: '0em' }],
+      },
+      borderRadius: {
+        DEFAULT: '0.25rem',
+        sm:      '0.125rem',
+        md:      '0.375rem',
+        lg:      '0.5rem',
+        xl:      '0.75rem',
+        full:    '9999px',
+      },
+      spacing: {
+        'gutter':    '1rem',
+        'gutter-sm': '0.5rem',
+        'margin':    '1.5rem',
+        'margin-mobile': '1rem',
+        'space-xs':  '0.25rem',
+        'space-sm':  '0.5rem',
+        'space-md':  '0.75rem',
+        'space-lg':  '1rem',
+        'space-xl':  '1.5rem',
+      },
+    },
+  },
+  plugins: [],
+}
+
+export default config
