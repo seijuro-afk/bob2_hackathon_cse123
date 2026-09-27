@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import bcrypt from 'bcryptjs'
+import { exec } from 'child_process'
 import { Task, User, type TaskDoc } from './db.ts'
 import { signToken, requireAuth, requireManager } from './auth.ts'
 
@@ -67,6 +68,32 @@ api.patch('/tasks/:id', requireAuth, requireManager, async (req: Request, res: R
   if (b.tags !== undefined) task.tags = strArray(b.tags)
   await task.save()
   res.json(toClient(task))
+})
+
+api.post('/tasks/:id/run', requireAuth, async (req: Request, res: Response) => {
+  const task = await Task.findById(req.params.id)
+  if (!task) {
+    res.status(404).json({ error: 'Task not found' })
+    return
+  }
+
+  const command = task.automatedCheck?.trim()
+  if (!command) {
+    res.json({ passed: true, output: '(no check configured)', durationMs: 0 })
+    return
+  }
+
+  const start = Date.now()
+  const result = await new Promise<{ passed: boolean; output: string }>((resolve) => {
+    const child = exec(command, { timeout: 30_000 }, (error, stdout, stderr) => {
+      const output = [stdout, stderr].filter(Boolean).join('\n').trim()
+      resolve({ passed: !error, output: output || '(no output)' })
+    })
+    // Ensure the process is killed on timeout
+    child.on('error', () => {})
+  })
+
+  res.json({ passed: result.passed, output: result.output, durationMs: Date.now() - start })
 })
 
 api.delete('/tasks/:id', requireAuth, requireManager, async (req: Request, res: Response) => {

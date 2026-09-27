@@ -11,6 +11,16 @@ export interface ApiTask {
   tags: string[]
 }
 
+export interface CheckResult {
+  passed: boolean
+  output: string
+  durationMs: number
+}
+
+export function runTaskCheck(id: string): Promise<CheckResult> {
+  return api<CheckResult>(`/tasks/${id}/run`, { method: 'POST' })
+}
+
 export interface AuthUser {
   role: 'manager' | 'engineer'
   username: string
