@@ -1,32 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
-  ChevronUp, ChevronDown, Pencil, Trash2, Save, X, GripVertical
+  ChevronUp, ChevronDown, Pencil, Trash2, Save, X, GripVertical, Loader2
 } from 'lucide-react'
 import Button from '../components/ui/Button'
 import Badge from '../components/ui/Badge'
 import Toast from '../components/ui/Toast'
 import { cn } from '../lib/utils'
-
-interface WorkflowTask {
-  id: number
-  title: string
-  description: string
-  tags: string[]
-  required: boolean
-  automatedCheck: string
-  estimatedTime: string
-}
-
-const INITIAL_TASKS: WorkflowTask[] = [
-  { id: 1, title: 'Clone Repository & SSH Keys', description: 'Clone the service repo and verify ed25519 SSH key is present and registered on GitHub.', tags: ['git', 'security'], required: true, automatedCheck: 'git ls-remote', estimatedTime: '5 min' },
-  { id: 2, title: 'Install Node Dependencies', description: 'Run pnpm install from the repository root. Lockfile must be committed.', tags: ['node', 'pnpm'], required: true, automatedCheck: 'pnpm install --frozen-lockfile', estimatedTime: '3 min' },
-  { id: 3, title: 'Configure Environment Variables', description: 'Copy .env.example to .env.local and fill in required values.', tags: ['config'], required: true, automatedCheck: 'test -f .env.local', estimatedTime: '5 min' },
-  { id: 4, title: 'Start Docker Containers', description: 'Launch Postgres, Redis, and MinIO using docker compose up -d.', tags: ['docker', 'infra'], required: true, automatedCheck: 'docker compose ps --status running', estimatedTime: '2 min' },
-  { id: 5, title: 'Run Database Migrations', description: 'Apply all pending Drizzle migrations to the local Postgres instance.', tags: ['database'], required: true, automatedCheck: 'pnpm db:migrate', estimatedTime: '1 min' },
-  { id: 6, title: 'Run Test Suite', description: 'Execute the full Vitest suite to verify setup integrity.', tags: ['testing'], required: false, automatedCheck: 'pnpm test', estimatedTime: '3 min' },
-]
-
-const PRESETS = ['Standard Engineering', 'Fast Track (Intern)', 'Full Compliance (Senior)']
+import { api, type ApiTask } from '../lib/api'
 
 const AUDIT_LOG = [
   { user: 'm-rodriguez', action: 'Updated Task 4 estimated time', time: '3h ago' },
@@ -35,43 +15,86 @@ const AUDIT_LOG = [
 ]
 
 export default function ManagerSettings() {
-  const [tasks, setTasks] = useState<WorkflowTask[]>(INITIAL_TASKS)
-  const [preset, setPreset] = useState(PRESETS[0])
+  const [tasks, setTasks] = useState<ApiTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const [toastVisible, setToastVisible] = useState(false)
-  const [editingTask, setEditingTask] = useState<WorkflowTask | null>(null)
-  const [editForm, setEditForm] = useState<WorkflowTask | null>(null)
+  const [editingTask, setEditingTask] = useState<ApiTask | null>(null)
+  const [editForm, setEditForm] = useState<ApiTask | null>(null)
 
-  const moveUp = (idx: number) => {
-    if (idx === 0) return
+  useEffect(() => {
+    api<ApiTask[]>('/tasks')
+      .then(setTasks)
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load tasks'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const reportError = (err: unknown, fallback: string) =>
+    setError(err instanceof Error ? err.message : fallback)
+
+  const swap = (idx: number, other: number) => {
     setTasks(prev => {
       const next = [...prev]
-      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+      ;[next[idx], next[other]] = [next[other], next[idx]]
       return next
     })
+  }
+
+  const moveUp = (idx: number) => {
+    if (idx > 0) swap(idx, idx - 1)
   }
 
   const moveDown = (idx: number) => {
-    if (idx === tasks.length - 1) return
-    setTasks(prev => {
-      const next = [...prev]
-      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
-      return next
-    })
+    if (idx < tasks.length - 1) swap(idx, idx + 1)
   }
 
-  const deleteTask = (id: number) => setTasks(prev => prev.filter(t => t.id !== id))
+  const deleteTask = async (id: string) => {
+    try {
+      await api(`/tasks/${id}`, { method: 'DELETE' })
+      setTasks(prev => prev.filter(t => t.id !== id))
+    } catch (err) {
+      reportError(err, 'Failed to delete task')
+    }
+  }
 
-  const openEdit = (task: WorkflowTask) => {
+  const openEdit = (task: ApiTask) => {
     setEditingTask(task)
     setEditForm({ ...task })
   }
 
   const closeEdit = () => { setEditingTask(null); setEditForm(null) }
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editForm) return
-    setTasks(prev => prev.map(t => t.id === editForm.id ? editForm : t))
-    closeEdit()
+    try {
+      const updated = await api<ApiTask>(`/tasks/${editForm.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: editForm.title,
+          description: editForm.description,
+          automatedCheck: editForm.automatedCheck,
+          estimatedTime: editForm.estimatedTime,
+          required: editForm.required,
+          tags: editForm.tags,
+        }),
+      })
+      setTasks(prev => prev.map(t => (t.id === updated.id ? updated : t)))
+      closeEdit()
+    } catch (err) {
+      reportError(err, 'Failed to save task')
+    }
+  }
+
+  const saveOrder = async () => {
+    try {
+      setTasks(await api<ApiTask[]>('/tasks/reorder', {
+        method: 'POST',
+        body: JSON.stringify({ ids: tasks.map(t => t.id) }),
+      }))
+      setToastVisible(true)
+    } catch (err) {
+      reportError(err, 'Failed to save order')
+    }
   }
 
   const requiredCount = tasks.filter(t => t.required).length
@@ -92,34 +115,27 @@ export default function ManagerSettings() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3">
-        <select
-          value={preset}
-          onChange={e => setPreset(e.target.value)}
-          className="bg-card-surface border border-card-border rounded text-xs font-mono text-text-primary px-3 py-2 focus:outline-none focus:border-accent-blue transition-colors"
-        >
-          {PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <Button variant="ghost" size="sm">Import YAML</Button>
-        <Button variant="ghost" size="sm">Preview Developer View</Button>
         <Button
           variant="primary"
           size="sm"
           leftIcon={<Save size={13} />}
-          onClick={() => setToastVisible(true)}
+          onClick={saveOrder}
+          disabled={loading}
         >
           Save Changes
         </Button>
+        {error && <span className="text-xs font-mono text-accent-red">{error}</span>}
       </div>
 
       {/* Progress banner */}
       <div className="bg-card-surface rounded-xl border border-card-border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
-          <p className="text-sm font-semibold text-text-primary">{preset}</p>
+          <p className="text-sm font-semibold text-text-primary">Onboarding Workflow</p>
           <p className="text-xs text-text-muted">{tasks.length} tasks · {requiredCount} required · {tasks.length - requiredCount} optional</p>
         </div>
         <div className="flex items-center gap-3 min-w-[220px]">
           <div className="flex-1 h-1.5 bg-card-border rounded-full overflow-hidden">
-            <div className="h-full bg-accent-green rounded-full" style={{ width: `${(requiredCount / tasks.length) * 100}%` }} />
+            <div className="h-full bg-accent-green rounded-full" style={{ width: `${tasks.length ? (requiredCount / tasks.length) * 100 : 0}%` }} />
           </div>
           <span className="text-xs font-mono text-accent-green">{requiredCount}/{tasks.length} required</span>
         </div>
@@ -128,6 +144,14 @@ export default function ManagerSettings() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Task list */}
         <section className="lg:col-span-8 flex flex-col gap-2">
+          {loading && (
+            <div className="flex items-center gap-2 p-4 text-sm text-text-muted font-mono">
+              <Loader2 size={15} className="animate-spin" /> Loading workflow...
+            </div>
+          )}
+          {!loading && tasks.length === 0 && (
+            <div className="p-4 text-sm text-text-muted font-mono">No tasks configured yet.</div>
+          )}
           {tasks.map((task, idx) => (
             <div
               key={task.id}

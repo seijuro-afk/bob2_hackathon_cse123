@@ -7,8 +7,7 @@ import {
   UserPlus,
   LogIn,
   BadgeCheck,
-  PlusCircle,
-  Play,
+  ArrowRight,
   ChevronRight,
   ShieldCheck,
   Clock,
@@ -19,7 +18,9 @@ import {
 import Badge from '../components/ui/Badge'
 import CopyButton from '../components/ui/CopyButton'
 import Button from '../components/ui/Button'
+import Input from '../components/ui/Input'
 import { cn } from '../lib/utils'
+import { useAuth } from '../lib/AuthContext'
 
 const CLI_CMD = 'npx devonboard join --token DEV-NEXUS-8492 --repo enterprise/nexus-core-api'
 
@@ -32,22 +33,29 @@ const INITIAL_STATUS: TerminalStatus = {
 
 export default function Welcome() {
   const navigate = useNavigate()
+  const { login } = useAuth()
   const [termStatus, setTermStatus] = useState<TerminalStatus>(INITIAL_STATUS)
+  const [error, setError] = useState('')
+  const [managerName, setManagerName] = useState('manager')
+  const [managerPassword, setManagerPassword] = useState('password123')
+  const [engineerName, setEngineerName] = useState('engineer')
+  const [engineerPassword, setEngineerPassword] = useState('password123')
 
-  const handleJoin = () => {
-    setTermStatus({
-      text: 'authenticating token DEV-NEXUS-8492... starting automated environment bootstrap!',
-      color: 'text-accent-green',
-    })
-    setTimeout(() => navigate('/setup'), 1200)
-  }
-
-  const handleCreateTeam = () => {
-    setTermStatus({
-      text: 'generating team workspace for core-platform with repository enterprise/nexus-core-api...',
-      color: 'text-accent-blue',
-    })
-    setTimeout(() => navigate('/manager'), 1200)
+  const signIn = async (username: string, password: string, destination: string) => {
+    setError('')
+    setTermStatus({ text: `authenticating ${username}...`, color: 'text-text-muted' })
+    try {
+      const user = await login(username.trim(), password)
+      setTermStatus({
+        text: `signed in as ${user.username} (${user.role}) — starting automated environment bootstrap!`,
+        color: 'text-accent-green',
+      })
+      navigate(destination)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Login failed'
+      setError(message)
+      setTermStatus({ text: `authentication failed: ${message}`, color: 'text-accent-red' })
+    }
   }
 
   return (
@@ -69,6 +77,12 @@ export default function Welcome() {
           </div>
           <Badge variant="success" dot pulse>active onboarding</Badge>
         </header>
+
+        {error && (
+          <div className="rounded-md border border-accent-red/40 bg-accent-red/10 px-4 py-2.5 text-xs font-mono text-accent-red">
+            {error}
+          </div>
+        )}
 
         {/* Hero */}
         <div className="flex flex-col space-y-2 text-center max-w-2xl mx-auto pt-1">
@@ -101,27 +115,14 @@ export default function Welcome() {
                   Set up onboarding checklists, configure automated CLI assertions, and provision repositories for incoming engineers.
                 </p>
               </div>
-              <div className="space-y-3 pt-1 text-xs font-mono">
+              <div className="grid grid-cols-2 gap-2 text-xs font-mono pt-1">
                 <div className="space-y-1">
-                  <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Team / Org Name</label>
-                  <div className="px-3 py-2 rounded bg-canvas-dark border border-card-border text-text-primary flex items-center justify-between">
-                    <span className="font-medium">core-platform</span>
-                    <span className="text-text-muted">#eng-core</span>
-                  </div>
+                  <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Username</label>
+                  <Input value={managerName} onChange={e => setManagerName(e.target.value)} autoComplete="username" />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2 space-y-1">
-                    <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Default Service Repo</label>
-                    <div className="px-3 py-2 rounded bg-canvas-dark border border-card-border text-text-primary truncate">
-                      enterprise/nexus-core-api
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Branch</label>
-                    <div className="px-3 py-2 rounded bg-canvas-dark border border-card-border">
-                      <span className="text-accent-green font-medium">main</span>
-                    </div>
-                  </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Password</label>
+                  <Input type="password" value={managerPassword} onChange={e => setManagerPassword(e.target.value)} autoComplete="current-password" />
                 </div>
               </div>
             </div>
@@ -129,10 +130,10 @@ export default function Welcome() {
               <Button
                 variant="secondary"
                 className="w-full justify-center py-2.5"
-                leftIcon={<PlusCircle size={15} className="text-accent-green" />}
-                onClick={handleCreateTeam}
+                leftIcon={<ArrowRight size={15} className="text-accent-blue" />}
+                onClick={() => signIn(managerName, managerPassword, '/manager')}
               >
-                Create Workspace &amp; Setup Pipeline →
+                Sign in &amp; Manage Workspace →
               </Button>
               <div className="text-[11px] text-text-muted flex items-center justify-center gap-2 font-mono">
                 <span>CLI snippet:</span>
@@ -161,8 +162,18 @@ export default function Welcome() {
                 </p>
               </div>
               <div className="space-y-3 pt-1 text-xs font-mono">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Username</label>
+                    <Input value={engineerName} onChange={e => setEngineerName(e.target.value)} autoComplete="username" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Password</label>
+                    <Input type="password" value={engineerPassword} onChange={e => setEngineerPassword(e.target.value)} autoComplete="current-password" />
+                  </div>
+                </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Invite Token / Magic Token</label>
+                  <label className="text-[11px] text-text-muted uppercase tracking-wider font-semibold">Invite Token</label>
                   <div className="px-3 py-2 rounded bg-canvas-dark border border-accent-green/40 flex items-center justify-between">
                     <span className="font-bold tracking-wider text-accent-green">DEV-NEXUS-8492</span>
                     <BadgeCheck size={15} className="text-accent-green" />
@@ -186,10 +197,10 @@ export default function Welcome() {
               <Button
                 variant="primary"
                 className="w-full justify-center py-2.5 text-xs font-bold"
-                leftIcon={<Play size={16} />}
-                onClick={handleJoin}
+                leftIcon={<LogIn size={16} />}
+                onClick={() => signIn(engineerName, engineerPassword, '/setup')}
               >
-                Join Team &amp; Start Onboarding ↵
+                Sign in &amp; Start Onboarding ↵
               </Button>
               <div className="text-[11px] text-text-muted flex items-center justify-center gap-2 font-mono">
                 <span>CLI snippet:</span>

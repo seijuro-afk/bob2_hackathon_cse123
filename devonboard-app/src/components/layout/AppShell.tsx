@@ -1,4 +1,4 @@
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   ListChecks,
   GitCommitHorizontal,
@@ -7,19 +7,31 @@ import {
   Settings2,
   PartyPopper,
   Terminal,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
+import { useAuth } from '../../lib/AuthContext'
 
 const NAV_ITEMS = [
-  { to: '/setup',     label: 'Setup Checklist',       Icon: ListChecks },
-  { to: '/commits',   label: 'Commit History',         Icon: GitCommitHorizontal },
-  { to: '/docs',      label: 'Docs Q&A',               Icon: BookOpen },
-  { to: '/validator', label: 'Environment Validator',  Icon: ShieldCheck },
-  { to: '/manager',   label: 'Manager Settings',       Icon: Settings2 },
-  { to: '/complete',  label: 'Onboarding Complete',    Icon: PartyPopper },
+  { to: '/setup',     label: 'Setup Checklist',       Icon: ListChecks, managerOnly: false },
+  { to: '/commits',   label: 'Commit History',         Icon: GitCommitHorizontal, managerOnly: false },
+  { to: '/docs',      label: 'Docs Q&A',               Icon: BookOpen, managerOnly: false },
+  { to: '/validator', label: 'Environment Validator',  Icon: ShieldCheck, managerOnly: false },
+  { to: '/manager',   label: 'Manager Settings',       Icon: Settings2, managerOnly: true },
+  { to: '/complete',  label: 'Onboarding Complete',    Icon: PartyPopper, managerOnly: false },
 ]
 
 export default function AppShell() {
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const visibleItems = NAV_ITEMS.filter(item => !item.managerOnly || user?.role === 'manager')
+
+  const handleLogout = () => {
+    logout()
+    navigate('/')
+  }
+
   return (
     <div className="flex h-screen bg-canvas-dark text-text-primary overflow-hidden">
       {/* Sidebar */}
@@ -34,7 +46,7 @@ export default function AppShell() {
 
         {/* Nav */}
         <nav className="flex-1 px-2 py-3 space-y-0.5">
-          {NAV_ITEMS.map(({ to, label, Icon }) => (
+          {visibleItems.map(({ to, label, Icon }) => (
             <NavLink
               key={to}
               to={to}
@@ -54,7 +66,22 @@ export default function AppShell() {
         </nav>
 
         {/* Footer */}
-        <div className="px-4 py-3 border-t border-card-border">
+        <div className="px-4 py-3 border-t border-card-border space-y-2">
+          {user && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-mono truncate">
+                <span className="text-accent-green">@{user.username}</span>
+                <span className="text-text-muted"> · {user.role}</span>
+              </span>
+              <button
+                onClick={handleLogout}
+                title="Sign out"
+                className="p-1 rounded hover:bg-card-hover text-text-muted hover:text-accent-red transition-colors flex-shrink-0"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
+          )}
           <p className="text-xs text-text-muted font-mono">DevOnboard v0.1.0</p>
         </div>
       </aside>

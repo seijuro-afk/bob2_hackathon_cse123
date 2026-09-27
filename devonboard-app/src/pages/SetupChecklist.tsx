@@ -5,25 +5,21 @@ import CopyButton from '../components/ui/CopyButton'
 import Button from '../components/ui/Button'
 import Badge from '../components/ui/Badge'
 import { cn } from '../lib/utils'
+import { api, type ApiTask } from '../lib/api'
 
 type TaskStatus = 'done' | 'active' | 'pending'
 
 interface Task {
-  id: number
+  id: string
   title: string
   subtitle: string
   command?: string
   status: TaskStatus
 }
 
-const INITIAL_TASKS: Task[] = [
-  { id: 1, title: 'Clone Repository & SSH Keys', subtitle: 'Git clone complete & key ed25519 verified', command: 'git clone git@github.com:enterprise/nexus-core-api.git && ssh-add ~/.ssh/id_ed25519', status: 'done' },
-  { id: 2, title: 'Install Node Dependencies', subtitle: 'pnpm install completed — 847 packages', command: 'pnpm install', status: 'done' },
-  { id: 3, title: 'Configure Environment Variables', subtitle: '.env.local created from template', command: 'cp .env.example .env.local && code .env.local', status: 'done' },
-  { id: 4, title: 'Start Docker Containers', subtitle: 'Postgres 15, Redis 7, MinIO running', command: 'docker compose up -d', status: 'active' },
-  { id: 5, title: 'Run Database Migrations', subtitle: 'Pending — requires task 4 completion', command: 'pnpm db:migrate', status: 'pending' },
-  { id: 6, title: 'Run Test Suite', subtitle: 'Pending — final validation step', command: 'pnpm test', status: 'pending' },
-]
+function fromApi(t: ApiTask): Task {
+  return { id: t.id, title: t.title, subtitle: t.description, command: t.automatedCheck, status: 'pending' }
+}
 
 const DOCKER_LOGS = [
   { t: '12:01:03', msg: 'Starting postgres:15-alpine...', ok: true },
@@ -36,11 +32,20 @@ const DOCKER_LOGS = [
 ]
 
 export default function SetupChecklist() {
-  const [tasks, setTasks] = useState<Task[]>(INITIAL_TASKS)
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [autoAdvance, setAutoAdvance] = useState(false)
 
+  useEffect(() => {
+    api<ApiTask[]>('/tasks')
+      .then(list => setTasks(list.map(fromApi)))
+      .catch(err => setLoadError(err instanceof Error ? err.message : 'Failed to load tasks'))
+      .finally(() => setLoading(false))
+  }, [])
+
   const doneCount = tasks.filter(t => t.status === 'done').length
-  const pct = Math.round((doneCount / tasks.length) * 100)
+  const pct = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0
 
   const runNext = () => {
     setTasks(prev => {
@@ -95,12 +100,23 @@ export default function SetupChecklist() {
               />
             ))}
           </div>
-          <Button variant="primary" size="sm" onClick={runNext} className="mt-1">
+          <Button variant="primary" size="sm" onClick={runNext} disabled={loading || tasks.length === 0} className="mt-1">
             Run Next: Task {String(doneCount + 1).padStart(2, '0')}
             <kbd className="ml-1.5 font-mono text-[10px] bg-black/20 px-1.5 py-0.5 rounded">↵</kbd>
           </Button>
         </div>
       </header>
+
+      {loading && (
+        <div className="flex items-center gap-2 text-sm text-text-muted font-mono">
+          <Loader2 size={15} className="animate-spin" /> Loading checklist...
+        </div>
+      )}
+      {loadError && (
+        <div className="rounded-md border border-accent-red/40 bg-accent-red/10 px-4 py-2.5 text-xs font-mono text-accent-red">
+          {loadError}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Tasks */}
@@ -141,7 +157,7 @@ export default function SetupChecklist() {
               )}
 
               {/* Expanded terminal for active docker task */}
-              {task.id === 4 && task.status === 'active' && (
+              {task.status === 'active' && /docker/i.test(task.title) && (
                 <Terminal
                   title="docker compose up -d"
                   rightSlot={
