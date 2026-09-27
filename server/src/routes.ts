@@ -1,10 +1,27 @@
 import { Router, type Request, type Response } from 'express'
 import bcrypt from 'bcryptjs'
 import { exec } from 'child_process'
+import os from 'os'
 import { Task, User, type TaskDoc } from './db.ts'
 import { signToken, requireAuth, requireManager } from './auth.ts'
 
 export const api = Router()
+
+// ── System info ───────────────────────────────────────────────────────────────
+
+api.get('/system', requireAuth, (_req, res) => {
+  const totalMemGb = Math.round(os.totalmem() / (1024 ** 3))
+  const cpus = os.cpus()
+  const cpu = cpus[0]?.model?.trim() ?? 'Unknown'
+  res.json({
+    os: `${os.type()} ${os.release()}`,
+    arch: os.arch(),
+    platform: os.platform(),
+    cpu,
+    cpuCount: cpus.length,
+    totalMemGb,
+  })
+})
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 

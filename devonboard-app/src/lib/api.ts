@@ -21,6 +21,39 @@ export function runTaskCheck(id: string): Promise<CheckResult> {
   return api<CheckResult>(`/tasks/${id}/run`, { method: 'POST' })
 }
 
+export interface CheckSummary {
+  taskId: string
+  title: string
+  automatedCheck: string
+  passed: boolean
+  output: string
+  durationMs: number
+}
+
+export interface SystemInfo {
+  os: string
+  arch: string
+  platform: string
+  cpu: string
+  cpuCount: number
+  totalMemGb: number
+}
+
+export function getSystemInfo(): Promise<SystemInfo> {
+  return api<SystemInfo>('/system')
+}
+
+export async function runAllChecks(): Promise<CheckSummary[]> {
+  const tasks = await api<ApiTask[]>('/tasks')
+  const results = await Promise.allSettled(tasks.map(t => runTaskCheck(t.id)))
+  return tasks.map((t, i) => {
+    const r = results[i]
+    return r.status === 'fulfilled'
+      ? { taskId: t.id, title: t.title, automatedCheck: t.automatedCheck, ...r.value }
+      : { taskId: t.id, title: t.title, automatedCheck: t.automatedCheck, passed: false, output: 'Request failed', durationMs: 0 }
+  })
+}
+
 export interface AuthUser {
   role: 'manager' | 'engineer'
   username: string

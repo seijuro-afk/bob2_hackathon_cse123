@@ -1,16 +1,17 @@
-import { useState, useEffect } from 'react'
-import { RefreshCw, Wrench, Download, CheckCircle2, AlertTriangle, XCircle, Copy } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { RefreshCw, Wrench, Download, CheckCircle2, AlertTriangle, XCircle, Copy, Loader2 } from 'lucide-react'
 import Terminal from '../components/ui/Terminal'
 import CopyButton from '../components/ui/CopyButton'
 import Button from '../components/ui/Button'
 import Badge from '../components/ui/Badge'
 import Toast from '../components/ui/Toast'
 import { cn } from '../lib/utils'
+import { runAllChecks, runTaskCheck, getSystemInfo, type CheckSummary, type SystemInfo } from '../lib/api'
 
 type DiagStatus = 'pass' | 'warning' | 'fail'
 
 interface DiagItem {
-  id: string
+  id: string       // task mongo id — used for runTaskCheck
   name: string
   version?: string
   expected?: string
@@ -24,79 +25,131 @@ interface DiagGroup {
   items: DiagItem[]
 }
 
-const INITIAL_GROUPS: DiagGroup[] = [
-  {
-    label: 'Core Runtimes',
-    items: [
-      { id: 'node', name: 'Node.js', version: 'v20.11.1', expected: '>=20.0.0', status: 'pass' },
-      { id: 'pnpm', name: 'pnpm', version: '8.14.0', expected: '>=8.0.0', status: 'pass' },
-      { id: 'git', name: 'Git', version: '2.43.0', expected: '>=2.40.0', status: 'pass' },
-    ],
-  },
-  {
-    label: 'Containerization',
-    items: [
-      { id: 'docker', name: 'Docker', version: '24.0.7', expected: '>=24.0.0', status: 'pass' },
-      { id: 'compose', name: 'Docker Compose', version: '2.24.1', expected: '>=2.20.0', status: 'pass' },
-      { id: 'containers', name: 'Containers Running', version: '3/3', status: 'pass' },
-    ],
-  },
-  {
-    label: 'Database & Services',
-    items: [
-      { id: 'postgres', name: 'PostgreSQL Connection', status: 'pass', version: 'OK' },
-      { id: 'redis', name: 'Redis Connection', status: 'warning', message: 'AUTH required but REDIS_PASSWORD not set', fixCommand: 'echo REDIS_PASSWORD=devpassword >> .env.local' },
-    ],
-  },
-  {
-    label: 'Security & Credentials',
-    items: [
-      { id: 'ssh', name: 'SSH Key (ed25519)', status: 'pass', version: 'Verified' },
-      { id: 'vault', name: 'Vault Token', status: 'warning', message: 'VAULT_TOKEN expires in 2 hours — re-authenticate', fixCommand: 'vault login -method=oidc' },
-    ],
-  },
-]
+// Maps the first tag of a task to a group label
+const TAG_GROUP: Record<string, string> = {
+  git: 'Git & Security',
+  security: 'Git & Security',
+  node: 'Core Runtimes',
+  pnpm: 'Core Runtimes',
+  docker: 'Containerization',
+  infra: 'Containerization',
+  database: 'Database & Services',
+  config: 'Configuration',
+  testing: 'Testing',
+}
+
+function summariesToGroups(summaries: CheckSummary[]): DiagGroup[] {
+  const groupMap = new Map<string, DiagItem[]>()
+  for (const s of summaries) {
+    const firstTag = s.automatedCheck ? (
+      // derive group from task title keywords as fallback when tags aren't on CheckSummary
+      Object.keys(TAG_GROUP).find(k => s.title.toLowerCase().includes(k)) ?? 'other'
+    ) : 'other'
+    const label = TAG_GROUP[firstTag] ?? 'Other'
+    const firstLine = s.output.split('\n').find(l => l.trim()) ?? s.output
+    const version = firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine
+    const item: DiagItem = {
+      id: s.taskId,
+      name: s.title,
+      version: s.passed ? version : undefined,
+      status: s.passed ? 'pass' : 'fail',
+      message: s.passed ? undefined : firstLine.slice(0, 80),
+    }
+    if (!groupMap.has(label)) groupMap.set(label, [])
+    groupMap.get(label)!.push(item)
+  }
+  return Array.from(groupMap.entries()).map(([label, items]) => ({ label, items }))
+}
 
 type LogLine = { t: string; msg: string; ok: boolean }
 
 export default function EnvironmentValidator() {
-  const [groups, setGroups] = useState<DiagGroup[]>(INITIAL_GROUPS)
-  const [logs, setLogs] = useState<LogLine[]>([
-    { t: '12:00:00', msg: 'Initial diagnostic run complete.', ok: true },
-  ])
+  const [groups, setGroups] = useState<DiagGroup[]>([])
+  const [logs, setLogs] = useState<LogLine[]>([])
   const [isRunning, setIsRunning] = useState(false)
   const [toastVisible, setToastVisible] = useState(false)
   const [toastMsg, setToastMsg] = useState('')
+  const [sysInfo, setSysInfo] = useState<SystemInfo | null>(null)
 
   const allItems = groups.flatMap(g => g.items)
   const passCount = allItems.filter(i => i.status === 'pass').length
   const warnCount = allItems.filter(i => i.status === 'warning').length
+  const failCount = allItems.filter(i => i.status === 'fail').length
 
   const addLog = (msg: string, ok = true) => {
     const t = new Date().toLocaleTimeString('en-GB')
     setLogs(prev => [...prev, { t, msg, ok }])
   }
 
-  const handleRerun = () => {
-    setIsRunning(true)
-    addLog('Re-running diagnostics...')
-    setTimeout(() => {
-      setIsRunning(false)
-      addLog('Diagnostic run complete.', true)
-      showToast('Diagnostics complete — ' + passCount + ' passed, ' + warnCount + ' warnings')
-    }, 1500)
+  const showToast = (msg: string) => {
+    setToastMsg(msg)
+    setToastVisible(true)
   }
 
-  const handleAutoFix = (item: DiagItem) => {
+  const fetchAndApply = useCallback(async () => {
+    setIsRunning(true)
+    addLog('Running diagnostics…')
+    try {
+      const summaries = await runAllChecks()
+      const built = summariesToGroups(summaries)
+      setGroups(built)
+      const p = summaries.filter(s => s.passed).length
+      const f = summaries.filter(s => !s.passed).length
+      summaries.forEach(s => addLog(
+        `${s.title}: ${s.passed ? 'passed' : 'failed'} (${s.durationMs}ms)`,
+        s.passed,
+      ))
+      addLog(`Done — ${p} passed, ${f} failed`, f === 0)
+      showToast(`Diagnostics complete — ${p} passed, ${f} failed`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Diagnostics failed'
+      addLog(msg, false)
+      showToast(msg)
+    } finally {
+      setIsRunning(false)
+    }
+  }, [])
+
+  // Run diagnostics and fetch system info on mount
+  useEffect(() => {
+    fetchAndApply()
+    getSystemInfo().then(setSysInfo).catch(() => {/* sidebar stays null — no crash */})
+  }, [fetchAndApply])
+
+  const handleRerun = () => { fetchAndApply() }
+
+  const handleAutoFix = async (item: DiagItem) => {
     if (!item.fixCommand) return
-    addLog('Applying fix: ' + item.fixCommand)
-    setGroups(prev =>
-      prev.map(g => ({
+    addLog(`Applying fix: ${item.fixCommand}`)
+    // Optimistically mark as fixing
+    setGroups(prev => prev.map(g => ({
+      ...g,
+      items: g.items.map(i => i.id === item.id ? { ...i, status: 'warning', message: 'Fixing…', version: undefined } : i),
+    })))
+    try {
+      const result = await runTaskCheck(item.id)
+      const firstLine = result.output.split('\n').find(l => l.trim()) ?? result.output
+      setGroups(prev => prev.map(g => ({
         ...g,
-        items: g.items.map(i => i.id === item.id ? { ...i, status: 'pass', message: undefined, version: 'Fixed' } : i),
-      }))
-    )
-    addLog('Fix applied successfully for ' + item.name, true)
+        items: g.items.map(i => i.id === item.id
+          ? {
+              ...i,
+              status: result.passed ? 'pass' : 'fail',
+              message: result.passed ? undefined : firstLine.slice(0, 80),
+              version: result.passed ? (firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine) : undefined,
+            }
+          : i),
+      })))
+      addLog(`${item.name}: re-check ${result.passed ? 'passed' : 'failed'} (${result.durationMs}ms)`, result.passed)
+      if (!result.passed) showToast(`${item.name} still failing — check the output`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Re-check failed'
+      setGroups(prev => prev.map(g => ({
+        ...g,
+        items: g.items.map(i => i.id === item.id ? { ...i, status: 'fail', message: msg } : i),
+      })))
+      addLog(`${item.name}: ${msg}`, false)
+    }
   }
 
   const handleExportJson = () => {
@@ -107,11 +160,6 @@ export default function EnvironmentValidator() {
     a.href = url; a.download = 'diagnostics.json'; a.click()
     URL.revokeObjectURL(url)
     showToast('Exported diagnostics.json')
-  }
-
-  const showToast = (msg: string) => {
-    setToastMsg(msg)
-    setToastVisible(true)
   }
 
   useEffect(() => {
@@ -132,10 +180,14 @@ export default function EnvironmentValidator() {
             <Badge variant="neutral" className="text-[10px] font-mono">PROBE-{Math.floor(Math.random() * 9000 + 1000)}</Badge>
           </div>
           <p className="text-sm text-text-muted">
-            {warnCount > 0
-              ? <span className="text-accent-amber">{warnCount} Warning{warnCount > 1 ? 's' : ''} Detected — </span>
+            {failCount > 0
+              ? <span className="text-accent-red">{failCount} Failed — </span>
+              : warnCount > 0
+              ? <span className="text-accent-amber">{warnCount} Warning{warnCount > 1 ? 's' : ''} — </span>
               : null}
-            {passCount}/{allItems.length} checks passed
+            {isRunning && groups.length === 0
+              ? 'Running checks…'
+              : `${passCount}/${allItems.length} checks passed`}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -168,12 +220,18 @@ export default function EnvironmentValidator() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Diagnostic groups */}
         <section className="lg:col-span-8 flex flex-col gap-4">
+          {isRunning && groups.length === 0 && (
+            <div className="flex items-center gap-2 text-sm text-text-muted font-mono bg-card-surface rounded-xl border border-card-border p-5">
+              <Loader2 size={15} className="animate-spin flex-shrink-0" />
+              Running environment checks…
+            </div>
+          )}
           {groups.map(group => (
             <div key={group.label} className="bg-card-surface rounded-xl border border-card-border overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-card-border bg-canvas-subtle">
                 <h2 className="text-sm font-semibold text-text-primary">{group.label}</h2>
                 <Badge
-                  variant={group.items.every(i => i.status === 'pass') ? 'success' : 'warning'}
+                  variant={group.items.every(i => i.status === 'pass') ? 'success' : group.items.some(i => i.status === 'fail') ? 'error' : 'warning'}
                   className="text-[10px]"
                 >
                   {group.items.filter(i => i.status === 'pass').length}/{group.items.length} passed
@@ -229,18 +287,21 @@ export default function EnvironmentValidator() {
           {/* Host specs */}
           <div className="bg-card-surface rounded-xl border border-card-border p-4 space-y-2">
             <h3 className="text-xs font-semibold text-text-muted uppercase tracking-wider">Host Machine</h3>
-            {[
-              { label: 'OS', value: 'macOS 14.3 (arm64)' },
-              { label: 'CPU', value: 'Apple M2 Pro' },
-              { label: 'RAM', value: '16 GB' },
-              { label: 'Disk Free', value: '48 GB' },
-              { label: 'Arch', value: 'darwin-arm64' },
-            ].map(item => (
-              <div key={item.label} className="flex items-center justify-between font-mono text-xs">
-                <span className="text-text-muted">{item.label}</span>
-                <span className="text-text-primary">{item.value}</span>
-              </div>
-            ))}
+            {sysInfo
+              ? [
+                  { label: 'OS', value: sysInfo.os },
+                  { label: 'Arch', value: sysInfo.arch },
+                  { label: 'CPU', value: sysInfo.cpu.length > 28 ? sysInfo.cpu.slice(0, 28) + '…' : sysInfo.cpu },
+                  { label: 'Cores', value: String(sysInfo.cpuCount) },
+                  { label: 'RAM', value: `${sysInfo.totalMemGb} GB` },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between font-mono text-xs">
+                    <span className="text-text-muted">{item.label}</span>
+                    <span className="text-text-primary">{item.value}</span>
+                  </div>
+                ))
+              : <p className="text-xs text-text-muted font-mono">Loading…</p>
+            }
           </div>
 
           {/* Compliance */}
