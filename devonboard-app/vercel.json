@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://bob2-hackathon-cse123.onrender.com/" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
+}

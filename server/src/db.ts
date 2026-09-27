@@ -6,6 +6,7 @@ export async function connectDb(): Promise<void> {
   const uri = process.env.MONGODB_URI
   if (uri) {
     await mongoose.connect(uri)
+    await seedIfEmpty()
     return
   }
 
